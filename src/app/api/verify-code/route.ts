@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users } from '@/db/schema';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, desc } from 'drizzle-orm';
 import { verificationTokens } from '@/db/schema';
+import bcrypt from 'bcryptjs';
 
 export async function POST(request: NextRequest) {
   try {
     const { code, email } = await request.json();
 
-    if (!code || !email) {
+    const codeString = String(code);  // Asegurar que code sea string
+
+    console.log('Código recibido:', codeString); // Log del código recibido
+
+    if (!codeString || !email) {
       return NextResponse.json(
         { success: false, message: 'Código y email son requeridos' },
         { status: 400 }
@@ -16,27 +21,44 @@ export async function POST(request: NextRequest) {
     }
 
     // Verificar que el código tenga 6 dígitos
-    if (!/^\d{6}$/.test(code)) {
+    if (!/^\d{6}$/.test(codeString)) {
       return NextResponse.json(
         { success: false, message: 'El código debe tener 6 dígitos' },
         { status: 400 }
       );
     }
 
-    // Verificar el token en DB
+    // Buscar tokens no expirados para el email
     const [verificationToken] = await db
       .select()
       .from(verificationTokens)
       .where(
         and(
           eq(verificationTokens.identifier, email),
-          eq(verificationTokens.token, code),
           gt(verificationTokens.expires, new Date())
         )
-      );
+      )
+      .orderBy(desc(verificationTokens.expires))
+      .limit(1);
+
     if (!verificationToken) {
       return NextResponse.json(
         { success: false, message: 'Código inválido o expirado' },
+        { status: 400 }
+      );
+    }
+
+    console.log('Código plano a verificar:', codeString); // Log del código plano
+    console.log('Hash almacenado en DB:', verificationToken.token); // Log del hash
+
+    // Verificar el código usando bcrypt
+    const isValidCode = await bcrypt.compare(codeString, verificationToken.token);
+    
+    console.log('¿Código válido?:', isValidCode); // Log del resultado de la comparación
+
+    if (!isValidCode) {
+      return NextResponse.json(
+        { success: false, message: 'Código inválido' },
         { status: 400 }
       );
     }
@@ -67,7 +89,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Después de actualizar o crear usuario
-      await db.delete(verificationTokens).where(eq(verificationTokens.token, code));
+      await db.delete(verificationTokens).where(eq(verificationTokens.token, verificationToken.token));
 
       return NextResponse.json({
         success: true,

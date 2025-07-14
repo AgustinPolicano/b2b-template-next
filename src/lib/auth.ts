@@ -7,6 +7,7 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { db } from "@/db";
 import { verificationTokens, users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import bcrypt from 'bcryptjs';
 
 // Declaración temporal de tipos para nodemailer (eliminar cuando se instale @types/nodemailer)
 declare module 'nodemailer' {
@@ -46,10 +47,12 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true,
     }),
     GitHubProvider({
       clientId: process.env.GITHUB_ID!,
       clientSecret: process.env.GITHUB_SECRET!,
+      allowDangerousEmailAccountLinking: true,
     }),
     EmailProvider({
       server: {
@@ -64,9 +67,15 @@ export const authOptions: NextAuthOptions = {
       async sendVerificationRequest({ identifier: email, url, provider }) {
         // Generar código de verificación de 6 dígitos
         const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        // Hashear el código antes de guardarlo
+        const hashedCode = await bcrypt.hash(verificationCode, 10);
+        
+        // Eliminar tokens existentes para este email
+        await db.delete(verificationTokens).where(eq(verificationTokens.identifier, email));
+        
         await db.insert(verificationTokens).values({
           identifier: email,
-          token: verificationCode,
+          token: hashedCode,
           expires: new Date(Date.now() + 15 * 60 * 1000),
         });
         
