@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { verificationTokens, users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
+import { stripe } from '@/lib/stripe';
 
 // Declaración temporal de tipos para nodemailer (eliminar cuando se instale @types/nodemailer)
 declare module 'nodemailer' {
@@ -43,6 +44,17 @@ declare module 'nodemailer' {
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   adapter: DrizzleAdapter(db),
+  events: {
+    createUser: async ({ user }) => {
+      const stripeCustomer = await stripe.customers.create({
+        email: user.email!,
+        name: user.name!,
+      });
+      await db.update(users).set({
+        stripeCustomerId: stripeCustomer.id,
+      }).where(eq(users.id, user.id!));
+    },
+  },
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,

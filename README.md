@@ -5,6 +5,7 @@ A complete Next.js authentication template with NextAuth that supports:
 - **Google OAuth** - Sign in with Google
 - **GitHub OAuth** - Sign in with GitHub  
 - **Email with verification code** - Email verification with 6-digit code
+- **Stripe Integration** - Process payments for subscription plans
 
 ## Features
 
@@ -12,6 +13,7 @@ A complete Next.js authentication template with NextAuth that supports:
 - ✅ **React 19** with TypeScript
 - ✅ **PostgreSQL** with Drizzle ORM
 - ✅ **NextAuth** for authentication
+- ✅ **Stripe Integration** for payments and subscriptions
 - ✅ **Tailwind CSS** for styling
 - ✅ **Email verification** with SMTP
 - ✅ **OAuth providers** (Google, GitHub)
@@ -47,6 +49,10 @@ EMAIL_SERVER_PORT=587
 EMAIL_SERVER_USER=your_email@gmail.com
 EMAIL_SERVER_PASSWORD=your_email_password
 EMAIL_FROM=your_email@gmail.com
+
+# Stripe Configuration
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
 ## Step-by-Step Setup
@@ -82,12 +88,20 @@ To use Gmail as SMTP server:
 2. Generate an app-specific password
 3. Use that password in `EMAIL_SERVER_PASSWORD`
 
-### 6. Install Dependencies
+### 6. Stripe Setup
+1. Create a [Stripe account](https://dashboard.stripe.com/register).
+2. Find your secret API key in the [Developer Dashboard](https://dashboard.stripe.com/apikeys) and add it to `STRIPE_SECRET_KEY`.
+3. Create a webhook endpoint from the [Webhooks Dashboard](https://dashboard.stripe.com/webhooks).
+4. Set the endpoint URL to `http://localhost:3000/api/stripe/webhook`.
+5. Select the `checkout.session.completed` event.
+6. Reveal the signing secret and add it to `STRIPE_WEBHOOK_SECRET`.
+
+### 7. Install Dependencies
 ```bash
 npm install
 ```
 
-### 7. Run Database Migrations
+### 8. Run Database Migrations
 ```bash
 npx drizzle-kit push
 ```
@@ -118,13 +132,22 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 ### Email with Verification Code
 1. User enters their email address
 2. A 6-character code is generated
-3. An email is sent with:
-   - The code for manual entry
-   - A direct link to `/verify?code=XXXXXX&email=user@example.com`
-4. User can either:
-   - Click the link (automatic verification)
-   - Go to `/verify` and enter the code manually
+3. An email is sent with the code
+4. User enters the code on the `/verify` page
 5. Code is verified and session is created
+
+## Stripe Integration Flow
+
+This template includes a generic backend integration for processing payments via Stripe.
+
+1.  **Checkout Request**:
+    -   The frontend sends a `POST` request to `/api/stripe/checkout` with a `planId`.
+    -   The backend verifies the user's session. If the user doesn't have a `stripeCustomerId`, a new customer is created in Stripe.
+    -   A Stripe Checkout session is created, and the session URL is returned to the client.
+2.  **Webhook Processing**:
+    -   After a successful payment, Stripe sends a `checkout.session.completed` event to the `/api/stripe/webhook` endpoint.
+    -   The backend verifies the webhook signature to ensure the request is from Stripe.
+    -   It then creates a `payment` and `subscription` record in the database and updates the user's `plan` and `credits`.
 
 ## Available Pages
 
@@ -139,13 +162,17 @@ src/
 ├── app/
 │   ├── api/
 │   │   ├── auth/[...nextauth]/route.ts    # NextAuth handler
-│   │   └── verify-code/route.ts           # API for code verification
+│   │   ├── verify-code/route.ts           # API for code verification
+│   │   └── stripe/
+│   │       ├── checkout/route.ts          # Stripe Checkout endpoint
+│   │       └── webhook/route.ts           # Stripe Webhook endpoint
 │   ├── login/page.tsx                     # Login page
 │   ├── layout.tsx                         # Layout with SessionProvider
 │   ├── providers.tsx                      # SessionProvider component
 │   └── page.tsx                           # Main page
 ├── lib/
-│   └── auth.ts                            # NextAuth configuration
+│   ├── auth.ts                            # NextAuth configuration
+│   └── stripe.ts                          # Stripe client configuration
 └── db/
     ├── index.ts                           # Database configuration
     └── schema.ts                          # Database schema
@@ -192,6 +219,7 @@ The project includes a custom user schema with additional fields:
 - `email` - User's email (required, unique)
 - `emailVerified` - Email verification timestamp
 - `image` - User's profile image URL
+- `stripeCustomerId` - Stripe Customer ID
 - `createdAt` - Account creation timestamp
 - `updatedAt` - Last update timestamp
 
@@ -239,6 +267,7 @@ Make sure the callback URLs in Google/GitHub match your configuration.
 - **NextAuth** - Authentication
 - **Drizzle ORM** - Database ORM
 - **PostgreSQL** - Database
+- **Stripe** - Payments Platform
 - **Tailwind CSS** - Styling
 - **Lucide React** - Icons
 
